@@ -14,21 +14,13 @@
         background-color: #020617; 
         color: white; 
         font-family: 'Inter', sans-serif; 
-        margin: 0; 
-        padding: 0; 
+        margin: 0; padding: 0; 
         overflow: hidden;
+        overscroll-behavior: none;
       }
       #root { height: 100vh; }
-      .loading-pulse { animation: pulse 2s infinite; }
-      @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-      #error-display {
-        display: none;
-        position: fixed;
-        top: 0; left: 0; right: 0; bottom: 0;
-        background: #000; color: #ff4444;
-        padding: 20px; font-family: monospace; font-size: 12px;
-        z-index: 9999; overflow-y: auto;
-      }
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      canvas { cursor: crosshair; touch-action: none; }
     </style>
 
     <script type="importmap">
@@ -43,27 +35,9 @@
   }
 }
 </script>
-
-    <script>
-      // Глобальный перехватчик ошибок для отладки в Telegram
-      window.onerror = function(msg, url, line) {
-        const display = document.getElementById('error-display');
-        display.style.display = 'block';
-        display.innerHTML += `<div>[ERROR] ${msg} <br> ${url}:${line}</div><hr>`;
-        return false;
-      };
-    </script>
   </head>
   <body>
-    <div id="error-display">
-      <h2 style="color: white; margin-bottom: 10px;">Критическая ошибка запуска:</h2>
-    </div>
-    <div id="root">
-      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; background:#020617; color:#38bdf8;">
-        <div style="font-size:32px; margin-bottom:15px;" class="loading-pulse">✨</div>
-        <div style="font-size:10px; font-weight:900; text-transform:uppercase; letter-spacing:0.4em;">Инициализация Матрицы...</div>
-      </div>
-    </div>
+    <div id="root"></div>
     <script type="text/babel" data-presets="react,typescript" data-type="module" src="index.tsx"></script>
   </body>
 </html>
