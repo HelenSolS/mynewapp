@@ -17,10 +17,13 @@
         margin: 0; padding: 0; 
         overflow: hidden;
         overscroll-behavior: none;
+        -webkit-tap-highlight-color: transparent;
       }
-      #root { height: 100vh; }
+      #root { height: 100vh; display: flex; flex-direction: column; }
       .no-scrollbar::-webkit-scrollbar { display: none; }
-      canvas { cursor: crosshair; touch-action: none; }
+      canvas { touch-action: none; cursor: crosshair; }
+      .safe-top { padding-top: env(safe-area-inset-top); }
+      .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
     </style>
 
     <script type="importmap">
