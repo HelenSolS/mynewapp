@@ -1,0 +1,1 @@
+// Consolidation complete. Logic moved to index.tsx.

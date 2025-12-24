@@ -1,0 +1,7 @@
+{
+  "name": "SigilCraft Elite TMA",
+  "description": "Premium AI artifact generator for Telegram.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
