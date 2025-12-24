@@ -6,10 +6,7 @@ import { SIGILS_CANON, ElementType, SigilDef } from './sigils-canon';
 const twa = (window as any).Telegram?.WebApp;
 const aistudio = (window as any).aistudio;
 
-type ArtStyle = 'Ancient' | 'Cyber' | 'Liquid' | 'Etheric';
-type RitualMood = 'Divine' | 'Dark' | 'Cosmic';
-
-const SketchPad = ({ onExport, isActive }: { onExport: (base64: string | null) => void, isActive: boolean }) => {
+const SketchPad = ({ onUpdate, disabled }: { onUpdate: (data: string | null) => void, disabled: boolean }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
@@ -19,71 +16,89 @@ const SketchPad = ({ onExport, isActive }: { onExport: (base64: string | null) =
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    ctx.strokeStyle = '#38bdf8';
+    // Инициализация стиля рисования
+    ctx.strokeStyle = '#0ea5e9'; // Sky 500
     ctx.lineWidth = 4;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    // Добавляем свечение линии для "магического" эффекта
-    ctx.shadowBlur = 8;
-    ctx.shadowColor = 'rgba(56, 189, 248, 0.5)';
+    ctx.shadowBlur = 5;
+    ctx.shadowColor = '#0ea5e9';
   }, []);
 
-  const getPos = (e: any) => {
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return { x: 0, y: 0 };
-    const clientX = e.clientX || e.touches?.[0]?.clientX;
-    const clientY = e.clientY || e.touches?.[0]?.clientY;
+  const getXY = (e: any) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+    const clientY = e.clientY || (e.touches && e.touches[0].clientY);
     return {
-      x: clientX - rect.left,
-      y: clientY - rect.top
+      x: (clientX - rect.left) * (canvas.width / rect.width),
+      y: (clientY - rect.top) * (canvas.height / rect.height)
     };
   };
 
   const start = (e: any) => {
-    if (!isActive) return;
-    const { x, y } = getPos(e);
+    if (disabled) return;
+    const { x, y } = getXY(e);
     const ctx = canvasRef.current?.getContext('2d');
-    ctx?.beginPath();
-    ctx?.moveTo(x, y);
-    setIsDrawing(true);
+    if (ctx) {
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      setIsDrawing(true);
+    }
   };
 
   const move = (e: any) => {
-    if (!isDrawing || !isActive) return;
-    const { x, y } = getPos(e);
+    if (!isDrawing || disabled) return;
+    if (e.cancelable) e.preventDefault(); // Останавливаем скролл
+    const { x, y } = getXY(e);
     const ctx = canvasRef.current?.getContext('2d');
-    ctx?.lineTo(x, y);
-    ctx?.stroke();
+    if (ctx) {
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    }
   };
 
-  const end = () => {
+  const stop = () => {
     if (!isDrawing) return;
     setIsDrawing(false);
-    onExport(canvasRef.current?.toDataURL('image/png') || null);
+    onUpdate(canvasRef.current?.toDataURL('image/png') || null);
   };
 
   const clear = () => {
-    const ctx = canvasRef.current?.getContext('2d');
-    if (ctx && canvasRef.current) {
-      ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-      onExport(null);
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (ctx && canvas) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      onUpdate(null);
+      if (twa?.HapticFeedback) twa.HapticFeedback.selectionChanged();
     }
   };
 
   return (
-    <div className="relative w-full h-full">
-      <canvas 
-        ref={canvasRef} 
-        width={512} height={512}
-        className="w-full h-full touch-none bg-black/20"
-        onMouseDown={start} onMouseMove={move} onMouseUp={end}
-        onTouchStart={start} onTouchMove={move} onTouchEnd={end}
+    <div className="relative w-full aspect-square bg-slate-950 border border-white/10 rounded-3xl overflow-hidden shadow-[0_0_50px_-12px_rgba(14,165,233,0.2)]">
+      <canvas
+        ref={canvasRef}
+        width={1024}
+        height={1024}
+        className="w-full h-full"
+        onMouseDown={start}
+        onMouseMove={move}
+        onMouseUp={stop}
+        onMouseLeave={stop}
+        onTouchStart={start}
+        onTouchMove={move}
+        onTouchEnd={stop}
       />
+      <div className="absolute top-4 left-6 pointer-events-none">
+        <span className="text-[10px] font-black uppercase tracking-[0.4em] text-sky-500/40">Altar Hub</span>
+      </div>
       <button 
         onClick={clear}
-        className="absolute bottom-4 right-4 bg-white/10 backdrop-blur-md px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest border border-white/10 active:scale-95 transition-transform"
+        disabled={disabled}
+        className="absolute bottom-6 right-6 bg-slate-900/80 backdrop-blur-xl border border-white/5 px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-slate-800 active:scale-95 transition-all disabled:opacity-0"
       >
-        Clear Altar
+        Reset
       </button>
     </div>
   );
@@ -92,24 +107,19 @@ const SketchPad = ({ onExport, isActive }: { onExport: (base64: string | null) =
 const App = () => {
   const [loading, setLoading] = useState(false);
   const [resultImage, setResultImage] = useState<string | null>(null);
-  const [currentSketch, setCurrentSketch] = useState<string | null>(null);
-  
-  // Ritual State
+  const [sketch, setSketch] = useState<string | null>(null);
   const [element, setElement] = useState<ElementType>('Огонь');
   const [selectedSigil, setSelectedSigil] = useState<SigilDef>(SIGILS_CANON.find(s => s.element === 'Огонь')!);
-  const [style, setStyle] = useState<ArtStyle>('Cyber');
-  const [mood, setMood] = useState<RitualMood>('Cosmic');
-  const [energy, setEnergy] = useState(2);
 
   useEffect(() => {
     if (twa) {
       twa.ready();
-      twa.setHeaderColor('#020617');
       twa.expand();
+      twa.setHeaderColor('#020617');
     }
   }, []);
 
-  const initiateSynthesis = async () => {
+  const handleSynthesis = async () => {
     setLoading(true);
     try {
       if (aistudio && !(await aistudio.hasSelectedApiKey())) {
@@ -117,39 +127,25 @@ const App = () => {
       }
 
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
-
-      const stylePrompts = {
-        'Ancient': 'Ancient alchemical scroll, hand-drawn ink on aged parchment, gold leaf illuminated manuscript, ritualistic textures, 8k macro.',
-        'Cyber': 'Futuristic holographic interface, neon glowing plasma lines, digital occultism, synthwave aesthetic, dark tech-void background.',
-        'Liquid': 'Macro photography of liquid mercury and iridescent oils, metallic fluid geometry, surreal chrome reflections, flowing shapes.',
-        'Etheric': 'Ethereal cosmic energy, gaseous nebula patterns, spirits made of light, translucent wispy forms, celestial radiance.'
-      };
-
-      const moodPrompts = {
-        'Divine': 'Heavenly radiance, white-gold light, pure and peaceful energy.',
-        'Dark': 'Obsidian shadows, cursed red energy, sinister and powerful atmosphere.',
-        'Cosmic': 'Multidimensional colors, astronomical precision, infinite stardust.'
-      };
-
-      const finalPrompt = `
-        High-fidelity transmutation of a ritual sketch.
-        Concept: "${selectedSigil.name}" of the ${element} element.
-        Canon Description: ${selectedSigil.tz}.
+      
+      const prompt = `
+        PROFESSIONAL RITUAL SIGIL ART PIECE.
+        Core geometry base: Provided user sketch.
+        Canon Template: "${selectedSigil.name}".
+        Elemental Affinity: ${element}.
+        Symbol Characteristics: ${selectedSigil.tz}.
         Energy Aura: ${selectedSigil.aura}.
-        Aesthetic: ${stylePrompts[style]}.
-        Mood: ${moodPrompts[mood]}.
-        Energy Intensity: ${energy}/3.
-        Technical: Perfectly centered, isolated on pitch black background, photorealistic, 8k, symmetrical masterpiece.
+        
+        Creative Task: Take the user's hand-drawn sketch and transform it into a perfectly symmetrical, high-fidelity arcane sigil. 
+        Visual Style: Cinematic occultism, glowing neon energy lines, intricate sacred geometry patterns, photorealistic stone or metal textures, isolated on a deep pitch-black background. 
+        Resolution: 8k masterpiece.
       `;
 
-      const contents: any = {
-        parts: [{ text: finalPrompt }]
-      };
-
-      if (currentSketch) {
-        contents.parts.push({
+      const parts: any[] = [{ text: prompt }];
+      if (sketch) {
+        parts.push({
           inlineData: {
-            data: currentSketch.split(',')[1],
+            data: sketch.split(',')[1],
             mimeType: 'image/png'
           }
         });
@@ -157,170 +153,148 @@ const App = () => {
 
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
-        contents,
+        contents: { parts },
         config: { imageConfig: { aspectRatio: "1:1" } }
       });
 
-      const part = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
-      if (part?.inlineData) {
-        setResultImage(`data:image/png;base64,${part.inlineData.data}`);
+      const imagePart = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
+      if (imagePart?.inlineData) {
+        setResultImage(`data:image/png;base64,${imagePart.inlineData.data}`);
         if (twa?.HapticFeedback) twa.HapticFeedback.notificationOccurred('success');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      if (twa) twa.showAlert("Synthesis interrupted. Check Aether connection.");
+      if (err.message?.includes('Requested entity was not found') && aistudio) {
+        await aistudio.openSelectKey();
+      } else {
+        twa?.showAlert("Synthesis error. Verify your connection.");
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const reset = () => {
-    setResultImage(null);
-    if (twa?.HapticFeedback) twa.HapticFeedback.impactOccurred('light');
-  };
+  if (resultImage) {
+    return (
+      <div className="flex flex-col h-full bg-black safe-top safe-bottom animate-in fade-in zoom-in duration-700">
+        <div className="flex-1 flex items-center justify-center p-6">
+          <img src={resultImage} className="w-full max-w-[600px] rounded-3xl shadow-[0_0_80px_-20px_rgba(14,165,233,0.5)] border border-white/10" alt="Generated Sigil" />
+        </div>
+        <div className="p-8">
+          <button 
+            onClick={() => {
+              setResultImage(null);
+              if (twa?.HapticFeedback) twa.HapticFeedback.impactOccurred('medium');
+            }}
+            className="w-full py-5 bg-white/5 border border-white/10 text-white rounded-2xl font-black uppercase tracking-[0.3em] text-[11px] active:bg-white/10 transition-all"
+          >
+            Return to Altar
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-[#020617] text-white overflow-hidden font-sans">
-      
-      {/* Header HUD */}
-      <div className="px-5 pt-4 flex justify-between items-end border-b border-white/5 pb-3 bg-black/20">
+    <div className="flex flex-col h-full bg-[#020617] text-white safe-top safe-bottom overflow-hidden font-sans">
+      {/* Header */}
+      <div className="px-6 pt-6 pb-4 flex justify-between items-end border-b border-white/5">
         <div>
-          <h1 className="text-xl font-black uppercase tracking-tighter italic">SigilCraft <span className="text-sky-500">Elite</span></h1>
-          <p className="text-[7px] font-bold text-slate-500 uppercase tracking-[0.4em] mt-0.5">Automated Ritual Protocol</p>
+          <h1 className="text-2xl font-black uppercase italic tracking-tighter leading-none">Sigil<span className="text-sky-500">Craft</span></h1>
+          <p className="text-[8px] font-bold text-slate-500 uppercase tracking-[0.5em] mt-1.5 ml-0.5">Elite TMA Protocol</p>
         </div>
-        <div className="text-right">
-          <div className="text-[8px] font-mono text-sky-800 uppercase">Resonance</div>
-          <div className="text-xs font-black text-sky-400">{(energy * 33.3).toFixed(1)}%</div>
+        <div className="flex flex-col items-end">
+          <div className="w-2 h-2 rounded-full bg-sky-500 animate-pulse shadow-[0_0_8px_#0ea5e9]"></div>
+          <span className="text-[9px] font-black text-sky-500/60 mt-1 uppercase">Active</span>
         </div>
       </div>
 
-      {/* Main Altar / Viewport */}
-      <div className="flex-1 relative bg-black flex items-center justify-center">
-        {!resultImage ? (
-          <SketchPad onExport={setCurrentSketch} isActive={!loading} />
-        ) : (
-          <div className="w-full h-full relative group animate-in fade-in zoom-in duration-1000">
-            <img src={resultImage} className="w-full h-full object-cover" alt="Artifact" />
-            <div className="absolute inset-x-0 bottom-0 p-6 bg-gradient-to-t from-black to-transparent">
-               <button 
-                onClick={reset}
-                className="w-full py-4 bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] active:scale-95 transition-transform"
-               >
-                 Dismiss Artifact
-               </button>
-            </div>
+      <div className="flex-1 overflow-y-auto no-scrollbar pb-32">
+        {/* Canvas Section */}
+        <div className="p-6">
+          <SketchPad onUpdate={setSketch} disabled={loading} />
+          <div className="mt-4 flex justify-center">
+             <span className="text-[9px] uppercase font-bold text-slate-600 tracking-[0.2em] bg-white/5 px-4 py-1.5 rounded-full border border-white/5">
+               Draw the Sigil Structure Above
+             </span>
           </div>
-        )}
+        </div>
 
-        {loading && (
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-xl z-50 flex flex-col items-center justify-center">
-            <div className="w-20 h-20 relative">
-               <div className="absolute inset-0 border-4 border-sky-500/10 rounded-full"></div>
-               <div className="absolute inset-0 border-4 border-sky-500 border-t-transparent rounded-full animate-spin"></div>
-            </div>
-            <p className="mt-8 text-[9px] font-black uppercase tracking-[0.5em] text-sky-500 animate-pulse">Transmuting Essence...</p>
-          </div>
-        )}
+        {/* Elements Selector */}
+        <div className="px-6 flex gap-4 overflow-x-auto no-scrollbar border-y border-white/5 bg-black/20 py-4 mb-2">
+          {['Воздух', 'Вода', 'Огонь', 'Земля', 'Эфир', 'Плетение'].map((el) => (
+            <button
+              key={el}
+              onClick={() => {
+                setElement(el as any);
+                setSelectedSigil(SIGILS_CANON.find(s => s.element === el)!);
+                if (twa?.HapticFeedback) twa.HapticFeedback.selectionChanged();
+              }}
+              className={`text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-lg transition-all whitespace-nowrap ${
+                element === el ? 'text-sky-500 bg-sky-500/10' : 'text-slate-600'
+              }`}
+            >
+              {el}
+            </button>
+          ))}
+        </div>
+
+        {/* Sigils Grid */}
+        <div className="px-6 grid grid-cols-2 gap-3 pb-10">
+          {SIGILS_CANON.filter(s => s.element === element).map((s) => (
+            <button
+              key={s.id}
+              onClick={() => {
+                setSelectedSigil(s);
+                if (twa?.HapticFeedback) twa.HapticFeedback.selectionChanged();
+              }}
+              className={`p-4 rounded-2xl text-left border transition-all duration-300 ${
+                selectedSigil.id === s.id 
+                  ? 'bg-sky-500 border-sky-400 text-black shadow-[0_0_30px_-10px_#0ea5e9]' 
+                  : 'bg-white/5 border-white/5 text-slate-400'
+              }`}
+            >
+              <div className="text-[10px] font-black uppercase truncate tracking-tight">{s.name}</div>
+              <div className={`text-[8px] mt-1 font-mono ${selectedSigil.id === s.id ? 'text-black/60' : 'text-slate-600'}`}>
+                ARCHIVE-0{s.id}
+              </div>
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Configuration Core */}
-      <div className="bg-[#020617] border-t border-white/5 p-5 space-y-4">
-        
-        {/* Sigil Selection */}
-        <div className="space-y-3">
-          <div className="flex justify-between items-center">
-            <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Select Canon</span>
-            <div className="flex gap-2">
-              {['Воздух', 'Вода', 'Огонь', 'Земля', 'Эфир', 'Плетение'].map(el => (
-                <button 
-                  key={el}
-                  onClick={() => {
-                    setElement(el as any);
-                    setSelectedSigil(SIGILS_CANON.find(s => s.element === el)!);
-                  }}
-                  className={`w-1.5 h-1.5 rounded-full ${element === el ? 'bg-sky-500 shadow-[0_0_8px_#38bdf8]' : 'bg-white/10'}`}
-                />
-              ))}
-            </div>
-          </div>
-          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-            {SIGILS_CANON.filter(s => s.element === element).map(s => (
-              <button 
-                key={s.id}
-                onClick={() => setSelectedSigil(s)}
-                className={`px-4 py-2 rounded-xl text-[10px] font-bold whitespace-nowrap border transition-all ${
-                  selectedSigil.id === s.id 
-                    ? 'bg-sky-500 border-sky-400 text-black shadow-lg shadow-sky-500/20' 
-                    : 'bg-white/5 border-white/5 text-slate-500'
-                }`}
-              >
-                {s.name}
-              </button>
-            ))}
-          </div>
+      {/* Synthesis Bar */}
+      <div className="absolute bottom-0 left-0 right-0 p-6 bg-[#020617]/80 backdrop-blur-2xl border-t border-white/10 safe-bottom">
+        <div className="mb-3 flex justify-between items-center text-[9px] font-bold uppercase tracking-[0.2em]">
+          <span className="text-slate-500">Vessel: <span className="text-white">{selectedSigil.name}</span></span>
+          <span className="text-sky-500">{element}</span>
         </div>
-
-        {/* Detailed Controls */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <span className="text-[8px] font-black uppercase text-slate-600 tracking-widest block">Style</span>
-            <div className="grid grid-cols-2 gap-1">
-              {['Cyber', 'Ancient', 'Liquid', 'Etheric'].map(s => (
-                <button 
-                  key={s} onClick={() => setStyle(s as any)}
-                  className={`py-2 rounded-lg text-[8px] font-bold uppercase ${style === s ? 'bg-white text-black' : 'bg-white/5 text-slate-500'}`}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-2">
-            <span className="text-[8px] font-black uppercase text-slate-600 tracking-widest block">Ritual Mood</span>
-            <div className="space-y-1">
-              {['Cosmic', 'Divine', 'Dark'].map(m => (
-                <button 
-                  key={m} onClick={() => setMood(m as any)}
-                  className={`w-full py-1.5 px-3 rounded-lg text-[8px] font-bold uppercase flex justify-between items-center ${
-                    mood === m ? 'bg-sky-500/10 text-sky-400 border border-sky-500/30' : 'bg-white/5 text-slate-500'
-                  }`}
-                >
-                  {m} <span className="opacity-30">✦</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Energy Bar */}
-        <div className="pt-2">
-          <div className="flex justify-between items-center mb-2">
-             <span className="text-[8px] font-black uppercase text-slate-600 tracking-widest">Energy level</span>
-             <span className="text-sky-500 font-mono text-[9px]">LEVEL_0{energy}</span>
-          </div>
-          <div className="flex gap-1 h-1.5">
-            {[1, 2, 3].map(v => (
-              <div 
-                key={v}
-                onClick={() => setEnergy(v)}
-                className={`flex-1 rounded-full cursor-pointer transition-all ${energy >= v ? 'bg-sky-500' : 'bg-white/10'}`}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Action Button */}
         <button 
-          onClick={initiateSynthesis}
-          disabled={loading || resultImage !== null}
-          className="w-full py-5 bg-sky-500 text-black rounded-2xl font-black uppercase text-xs tracking-[0.4em] shadow-[0_0_30px_rgba(56,189,248,0.3)] active:scale-95 transition-all disabled:opacity-30 disabled:grayscale mt-2"
+          onClick={handleSynthesis}
+          disabled={loading}
+          className="w-full py-5 bg-sky-500 text-black rounded-2xl font-black uppercase text-xs tracking-[0.5em] shadow-xl shadow-sky-500/20 active:scale-95 transition-all disabled:opacity-50 disabled:grayscale overflow-hidden relative"
         >
-          {loading ? 'Synthesizing...' : 'Initiate Synthesis'}
+          {loading ? (
+            <span className="flex items-center justify-center gap-2">
+               <div className="w-3 h-3 border-2 border-black/20 border-t-black rounded-full animate-spin"></div>
+               Synthesizing...
+            </span>
+          ) : 'Initiate Synthesis'}
         </button>
       </div>
 
-      {/* Safe Area Footer */}
-      <div className="h-4 bg-[#020617]"></div>
+      {/* Global Overlay */}
+      {loading && (
+        <div className="absolute inset-0 bg-black/80 backdrop-blur-md z-[100] flex flex-col items-center justify-center animate-in fade-in duration-500">
+          <div className="relative">
+            <div className="w-24 h-24 border-2 border-sky-500/10 border-t-sky-500 rounded-full animate-spin"></div>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-12 h-12 border border-sky-500/20 rounded-full animate-ping"></div>
+            </div>
+          </div>
+          <p className="mt-8 text-[10px] font-black uppercase tracking-[0.8em] text-sky-500 animate-pulse">Aligning Realities</p>
+        </div>
+      )}
     </div>
   );
 };
